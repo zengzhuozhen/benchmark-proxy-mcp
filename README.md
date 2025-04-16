@@ -1,5 +1,7 @@
 
-benchmark-proxy(https://github.com/zengzhuozhen/benchmark-proxy) mcp server
+[benchmark-proxy](https://github.com/zengzhuozhen/benchmark-proxy) mcp server
+
+
 
 mcp_setting :
 
