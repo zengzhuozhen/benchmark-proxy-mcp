@@ -32,7 +32,7 @@ def call(backendAPI: str,headers: dict) -> str:
     # return result_text
     try:
         # 构建 curl 命令
-        curl_cmd = ["curl", "-s", "-i", "-m", "30"]  # -s: 静默, -i: 包含响应头, -m 30: 超时 30 秒
+        curl_cmd = ["curl", "-s", "-i", "-m", "60", "-A", "FastMCP-Client/1.0"]
         curl_cmd.extend(["-x", proxy_host])  # 设置代理
         curl_cmd.append(backendAPI)  # 目标 URL
 
@@ -45,19 +45,94 @@ def call(backendAPI: str,headers: dict) -> str:
             curl_cmd,
             capture_output=True,
             text=True,
-            check=True
+            check=False
         )
 
-        # 解析 curl 输出
+        # Check if curl command resulted in an error indicated by non-zero exit code
+        if result.returncode != 0:
+            # Attempt to extract error message from stderr if available
+            error_message = result.stderr.strip() if result.stderr else "No stderr output."
+            # Also include stdout if it contains relevant info (like proxy error messages)
+            stdout_info = result.stdout.strip() if result.stdout else "No stdout output."
+            return f"Error: curl command failed with exit code {result.returncode}. Stderr: '{error_message}'. Stdout: '{stdout_info}'"
+
+        # 解析 curl 输出 (stdout contains headers and body)
         return result.stdout
 
-    except subprocess.CalledProcessError as e:
-        # 捕获 curl 命令执行失败的错误
-        result_text = f"Error: curl command failed with exit code {e.returncode}: {e.stderr}"
+    except subprocess.TimeoutExpired:
+        return f"Error: curl command timed out after 60 seconds for {backendAPI}"
+    except FileNotFoundError:
+        return "Error: 'curl' command not found. Please ensure curl is installed and in your PATH."
     except Exception as e:
         # 捕获其他异常
-        result_text = f"Error: {str(e)}"
+        result_text = f"Error executing benchmark call: {str(e)}"
+        return result_text
 
+@mcp.tool()
+def run_duration_test(
+    url: str,
+    duration_seconds: int,
+    concurrency: int,
+    expected_status: Optional[int] = None,
+    expected_body_contains: Optional[str] = None
+) -> str:
+    """
+    Runs a benchmark test for a specified duration and concurrency.
+
+    Args:
+        url: The target URL to test.
+        duration_seconds: How long the test should run in seconds.
+        concurrency: The number of concurrent requests.
+        expected_status: Optional HTTP status code expected for a successful request.
+        expected_body_contains: Optional string that the response body must contain for success.
+
+    Returns:
+        The raw output string from the benchmark-proxy service.
+    """
+    benchmark_headers = {
+        "Benchmark-Proxy-Duration": str(duration_seconds),
+        "Benchmark-Proxy-Concurrency": str(concurrency)
+    }
+    if expected_status is not None:
+        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = str(expected_status)
+    if expected_body_contains is not None:
+        # For simplicity, we'll assume direct string match. Use '@Reg:' prefix for regex.
+        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = expected_body_contains
+
+    return call(backendAPI=url, headers=benchmark_headers)
+
+@mcp.tool()
+def run_times_test(
+    url: str,
+    times: int,
+    concurrency: int,
+    expected_status: Optional[int] = None,
+    expected_body_contains: Optional[str] = None
+) -> str:
+    """
+    Runs a benchmark test for a specified number of times and concurrency.
+
+    Args:
+        url: The target URL to test.
+        times: How many times the request should be executed in total.
+        concurrency: The number of concurrent requests.
+        expected_status: Optional HTTP status code expected for a successful request.
+        expected_body_contains: Optional string that the response body must contain for success.
+
+    Returns:
+        The raw output string from the benchmark-proxy service.
+    """
+    benchmark_headers = {
+        "Benchmark-Proxy-Times": str(times),
+        "Benchmark-Proxy-Concurrency": str(concurrency)
+    }
+    if expected_status is not None:
+        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = str(expected_status)
+    if expected_body_contains is not None:
+        # For simplicity, we'll assume direct string match. Use '@Reg:' prefix for regex.
+        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = expected_body_contains
+
+    return call(backendAPI=url, headers=benchmark_headers)
 
 if __name__ == "__main__":
     mcp.run()
