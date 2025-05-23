@@ -1,10 +1,39 @@
 from fastmcp import FastMCP
-from typing import Optional, Dict
+from typing import Optional, Dict, Union, List
 import requests
 import subprocess
+import re
 
 
 mcp = FastMCP("benchmark-proxy mcp")
+
+def format_status_checker(status: Union[int, str, List[int]]) -> str:
+    """
+    Format status checker expression based on input type.
+    Examples:
+    - Single value: 200
+    - Multiple values: 200,201
+    - Range: 200-299
+    """
+    if isinstance(status, int):
+        return str(status)
+    elif isinstance(status, list):
+        return ",".join(map(str, status))
+    return str(status)
+
+def format_body_checker(body_check: str) -> str:
+    """
+    Format body checker expression.
+    Examples:
+    - Exact match: hello world
+    - Contains: @Contains[success]
+    - Regex: @Reg[\w+]
+    """
+    if body_check.startswith("@Contains["):
+        return body_check
+    elif body_check.startswith("@Reg["):
+        return body_check
+    return body_check
 
 @mcp.tool()
 def call(backendAPI: str,headers: dict) -> str:
@@ -73,8 +102,8 @@ def run_duration_test(
     url: str,
     duration_seconds: int,
     concurrency: int,
-    expected_status: Optional[int] = None,
-    expected_body_contains: Optional[str] = None
+    expected_status: Optional[Union[int, str, List[int]]] = None,
+    expected_body: Optional[str] = None
 ) -> str:
     """
     Runs a benchmark test for a specified duration and concurrency.
@@ -83,21 +112,51 @@ def run_duration_test(
         url: The target URL to test.
         duration_seconds: How long the test should run in seconds.
         concurrency: The number of concurrent requests.
-        expected_status: Optional HTTP status code expected for a successful request.
-        expected_body_contains: Optional string that the response body must contain for success.
+        expected_status: Optional HTTP status code(s) expected for success. Can be:
+            - Single value (e.g., 200)
+            - Multiple values (e.g., [200, 201])
+            - Range string (e.g., "200-299")
+        expected_body: Optional response body check. Can be:
+            - Exact match (e.g., "hello world")
+            - Contains check (e.g., "@Contains[success]")
+            - Regex pattern (e.g., "@Reg[\w+]")
 
     Returns:
         The raw output string from the benchmark-proxy service.
+
+    Note:
+        You can use customize tags in your request data to generate dynamic values:
+        - ${uuid} - Random UUID
+        - ${int} or ${int:min,max} - Random integer
+        - ${float} or ${float:min,max} - Random float
+        - ${string} or ${string:length} - Random string
+        - ${bool} - Random boolean
+        - ${date:format} - Current date with format
+        - ${timestamp} - Current unix timestamp
+        - ${incr} or ${incr:start,step} - Auto-increment integer
+        - ${range:start,end} - Range auto-increment
+        - ${list:[a,b,c]} - Random pick from list
+        - ${const:value} - Constant value
+
+        Example request data with tags:
+        {
+            "user_id": "${uuid}",
+            "age": "${int:18,60}",
+            "name": "${string:8}",
+            "email": "${string:6}@example.com",
+            "status": "${list:[active,inactive]}",
+            "created_at": "${timestamp}"
+        }
     """
     benchmark_headers = {
         "Benchmark-Proxy-Duration": str(duration_seconds),
         "Benchmark-Proxy-Concurrency": str(concurrency)
     }
+    
     if expected_status is not None:
-        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = str(expected_status)
-    if expected_body_contains is not None:
-        # For simplicity, we'll assume direct string match. Use '@Reg:' prefix for regex.
-        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = expected_body_contains
+        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = format_status_checker(expected_status)
+    if expected_body is not None:
+        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = format_body_checker(expected_body)
 
     return call(backendAPI=url, headers=benchmark_headers)
 
@@ -106,8 +165,8 @@ def run_times_test(
     url: str,
     times: int,
     concurrency: int,
-    expected_status: Optional[int] = None,
-    expected_body_contains: Optional[str] = None
+    expected_status: Optional[Union[int, str, List[int]]] = None,
+    expected_body: Optional[str] = None
 ) -> str:
     """
     Runs a benchmark test for a specified number of times and concurrency.
@@ -116,21 +175,51 @@ def run_times_test(
         url: The target URL to test.
         times: How many times the request should be executed in total.
         concurrency: The number of concurrent requests.
-        expected_status: Optional HTTP status code expected for a successful request.
-        expected_body_contains: Optional string that the response body must contain for success.
+        expected_status: Optional HTTP status code(s) expected for success. Can be:
+            - Single value (e.g., 200)
+            - Multiple values (e.g., [200, 201])
+            - Range string (e.g., "200-299")
+        expected_body: Optional response body check. Can be:
+            - Exact match (e.g., "hello world")
+            - Contains check (e.g., "@Contains[success]")
+            - Regex pattern (e.g., "@Reg[\w+]")
 
     Returns:
         The raw output string from the benchmark-proxy service.
+
+    Note:
+        You can use customize tags in your request data to generate dynamic values:
+        - ${uuid} - Random UUID
+        - ${int} or ${int:min,max} - Random integer
+        - ${float} or ${float:min,max} - Random float
+        - ${string} or ${string:length} - Random string
+        - ${bool} - Random boolean
+        - ${date:format} - Current date with format
+        - ${timestamp} - Current unix timestamp
+        - ${incr} or ${incr:start,step} - Auto-increment integer
+        - ${range:start,end} - Range auto-increment
+        - ${list:[a,b,c]} - Random pick from list
+        - ${const:value} - Constant value
+
+        Example request data with tags:
+        {
+            "user_id": "${uuid}",
+            "age": "${int:18,60}",
+            "name": "${string:8}",
+            "email": "${string:6}@example.com",
+            "status": "${list:[active,inactive]}",
+            "created_at": "${timestamp}"
+        }
     """
     benchmark_headers = {
         "Benchmark-Proxy-Times": str(times),
         "Benchmark-Proxy-Concurrency": str(concurrency)
     }
+    
     if expected_status is not None:
-        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = str(expected_status)
-    if expected_body_contains is not None:
-        # For simplicity, we'll assume direct string match. Use '@Reg:' prefix for regex.
-        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = expected_body_contains
+        benchmark_headers["Benchmark-Proxy-Check-Result-Status"] = format_status_checker(expected_status)
+    if expected_body is not None:
+        benchmark_headers["Benchmark-Proxy-Check-Result-Body"] = format_body_checker(expected_body)
 
     return call(backendAPI=url, headers=benchmark_headers)
 
